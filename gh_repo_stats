@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+
+require 'open-uri'
+require 'zlib'
+require 'yajl'
+require 'getoptlong'
+require 'json'
+
+# opts = GetoptLong.new(
+# 	[ '--after', GetoptLong::OPTIONAL_ARGUMENT],
+# 	[ '--before', GetoptLong::OPTIONAL_ARGUMENT],
+# 	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
+# 	[ '--count', GetoptLong::OPTIONAL_ARGUMENT],
+# 	[ '--help','--h']
+# )
+
+path = 'http://data.githubarchive.org/'
+ext = '.json.gz'
+
+after = Time.now
+before = 
+event =
+count = 15
+
+# opts.each do |opt, arg|
+# 	case opt
+# 		when '--after'
+# 			after = arg
+# 		end
+# 		when '--before'
+# 			before = arg
+# 		end
+# 		when '--event'
+# 			event = arg
+# 		end
+# 		when '--count'
+# 		end
+# 	end
+# end
+
+gz = open('http://data.githubarchive.org/2012-01-01-12.json.gz')
+js = Zlib::GzipReader.new(gz)
+parsed = []
+js.each do |j|
+	parsed << JSON.parse(j)
+end
+
+parsed.each do |i|
+	id = i["id"]
+	name = i["repo"]["name"]
+	type = i["type"]
+	puts name
+end
+
+
+
+
+	private
+
+# def build_query
+# 	options[:begin]
+# 	options[:after]
+# 	gz = open(path + options[:begining] + options[:after] + + ext)
+# end
+
+# def make_call
+
+# end
+
+# def display
+
+# end
+
+
+
