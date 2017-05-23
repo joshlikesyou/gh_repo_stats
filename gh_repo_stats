@@ -8,76 +8,83 @@ require 'time'
 require 'date'
 
 opts = GetoptLong.new(
-	[ '--after', GetoptLong::OPTIONAL_ARGUMENT],
-	[ '--before', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--after', GetoptLong::REQUIRED_ARGUMENT],
+	[ '--before', GetoptLong::REQUIRED_ARGUMENT],
 	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
-	[ '--count', GetoptLong::OPTIONAL_ARGUMENT],
-	[ '--help','--h']
+	[ '--count', GetoptLong::OPTIONAL_ARGUMENT]
 )
 
 @path = 'http://data.githubarchive.org/'
 @ext = '.json.gz'
-
-@after = Time.now
-@event = "pull"
+@event = "PushEvent"
 @count = 15
+@queries = []
 @parsed = []
+@repos = {}
 
-# pull options from command
+# options from command
 opts.each do |opt, arg|
 	case opt
 	when '--after'
-		@a_hour = Time.parse(arg)
+		@a_time = Time.parse(arg)
 		@a_date = Date.parse(arg)
 	when '--before'
-		@b_hour = Time.parse(arg)
+		@b_time = Time.parse(arg)
 		@b_date = Date.parse(arg)
 	when '--event'
 		@event = arg
 	when '--count'
-		@count = arg
-	when '--help'
-		puts "do this and that"
+		@count = arg.to_i
 	end
 end
 
-@queries = []
-
-@hours_left = lambda do |order|
-	if order == :after
-		return 24
-	elsif order == :before
-		return 0
-	end
-end
-
-def query_by_hour(order, date)
-	hours_left = @hours_left.call(order)
-	unless after.hour == 0
+# Go through each hour and make api call
+def query_by_hour(mode, date)
+	mode == :after ? @p_time = @a_time : @p_time = @b_time
+	unless @p_time.hour == 0
 		# Loop through remaining hours in query
-		hour = after.hour
-	  while hour < hours_left
-			@queries << "#{path}#{date}-#{hour}#{ext}"
-			hour += 1
+		# only used on days that are partially selected
+		# check if this is from the after argument
+		if mode == :after
+			hour = @p_time.hour
+		  while hour < 24
+				@queries << "#{@path}#{date}-#{hour}#{@ext}"
+				hour += 1
+			end
+		elsif mode == :before
+		# check if this is from the before argument
+			hour = 0
+			while hour <= @p_time.hour
+				@queries << "#{@path}#{date}-#{hour}#{@ext}"
+				hour += 1
+			end
 		end
 	else
+		# else go through hours of a whole day
 		query_by_day(date)
 	end
 end
 
 def query_by_day(date)
-	@queries << "#{path}#{date}#{ext}"
+	hour = 0
+	while hour < 24
+		@queries << "#{@path}#{date}-#{hour}#{@ext}"
+		hour += 1
+	end
 end
 
-(@a_date..@b_date).each_with_index do |date|
-	if date == @after
-		# check if date is first day, get by the hour
-		query_by_hour(:first, date)
-	elsif date == @before
-		# check if date is last day, get by the hour
-		query_by_hour(:last, date)
-	else
-		query_by_day
+def process_date_range
+	(@a_date..@b_date).each_with_index do |date|
+		if date.to_s == @a_date.strftime('%F')
+			# check if date is first day, get by the hour
+			query_by_hour(:after, date)
+		elsif date.to_s == @b_date.strftime('%F')
+			# check if date is last day, get by the hour
+			query_by_hour(:before, date)
+		else
+			# runs all the inbetween days
+			query_by_day(date)
+		end
 	end
 end
 
@@ -92,59 +99,28 @@ def make_calls
 	end
 end
 
-# a_date = after.strftime("%F")
-
-# Take date range and loop through api calls until you reach end of date range
-# Check if hour is given, if so call through the end of the day
-# If until date is given  make calls to the last day, if last day is by the hour,
-# stop just short of that last day and make calls up to that last hour
-
-# minus day in hourly
-
-# count days, if no after argument given only make call on first day,
-# loop through days
-# first day, check if go by hour or day, otherwise make call by day
-# last day, check if go by hour or day, otherwise make call by day
-
-def get_by_hour
-	unless after.hour == 0
-		# Loop through remaining hours in the day
-		hour = after.hour
-	  while hour < 24
-			uri = "#{path}#{a_date}-#{hour}#{ext}"
-			hour += 1
-			make_call(uri)
-			puts hour
+def process_repos
+	# tally up the score from the repos
+	@parsed.each do |i|
+		if i["repository"] && i["type"] == @event
+			reponame = i["repository"]["owner"] + '/' + i["repository"]["name"]
+			if @repos[reponame].nil?
+				@repos[reponame] = 1
+			else
+				@repos[reponame] = @repos[reponame] + 1
+			end
 		end
-	else
-		get_day
+	end
+	@repos = @repos.sort_by { |k,v| [-v,k] }.to_h.first(@count)
+	@repos.each do |r|
+		puts "#{r[0]} - #{r[1]} events"
 	end
 end
 
-
-# Go through each and sort
-# Create new hash with repo name
-# If record matches event type add 1 to that repo name
-
-@parsed.each do |i|
-	# id = i["id"]
-	# name = i["repo"]["name"]
-	# type = i["type"]
-	# puts i
+def process
+	process_date_range
+	make_calls
+	process_repos
 end
 
-# Sort Hash by hits
-# Return first N results
-# Puts each
-
-# def build_query
-# 	options[:begin]
-# 	options[:after]
-# 	gz = open(path + options[:begining] + options[:after] + + ext)
-# end
-
-# def make_call
-# end
-
-# def display
-# end
+process
