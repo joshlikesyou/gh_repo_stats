@@ -38,7 +38,7 @@ opts.each do |opt, arg|
 		@count = arg
 	when '--help'
 		puts "do this and that"
-	end 
+	end
 end
 
 @queries = []
