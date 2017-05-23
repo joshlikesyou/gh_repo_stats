@@ -2,60 +2,140 @@
 
 require 'open-uri'
 require 'zlib'
-require 'yajl'
 require 'getoptlong'
 require 'json'
+require 'time'
+require 'date'
 
-# opts = GetoptLong.new(
-# 	[ '--after', GetoptLong::OPTIONAL_ARGUMENT],
-# 	[ '--before', GetoptLong::OPTIONAL_ARGUMENT],
-# 	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
-# 	[ '--count', GetoptLong::OPTIONAL_ARGUMENT],
-# 	[ '--help','--h']
-# )
+opts = GetoptLong.new(
+	[ '--after', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--before', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--count', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--help','--h']
+)
 
-path = 'http://data.githubarchive.org/'
-ext = '.json.gz'
+@path = 'http://data.githubarchive.org/'
+@ext = '.json.gz'
 
-after = Time.now
-before = 
-event =
-count = 15
+@after = Time.now
+@event = "pull"
+@count = 15
+@parsed = []
 
-# opts.each do |opt, arg|
-# 	case opt
-# 		when '--after'
-# 			after = arg
-# 		end
-# 		when '--before'
-# 			before = arg
-# 		end
-# 		when '--event'
-# 			event = arg
-# 		end
-# 		when '--count'
-# 		end
-# 	end
-# end
-
-gz = open('http://data.githubarchive.org/2012-01-01-12.json.gz')
-js = Zlib::GzipReader.new(gz)
-parsed = []
-js.each do |j|
-	parsed << JSON.parse(j)
+# pull options from command
+opts.each do |opt, arg|
+	case opt
+	when '--after'
+		@a_hour = Time.parse(arg)
+		@a_date = Date.parse(arg)
+	when '--before'
+		@b_hour = Time.parse(arg)
+		@b_date = Date.parse(arg)
+	when '--event'
+		@event = arg
+	when '--count'
+		@count = arg
+	when '--help'
+		puts "do this and that"
+	end
 end
 
-parsed.each do |i|
-	id = i["id"]
-	name = i["repo"]["name"]
-	type = i["type"]
-	puts name
+@queries = []
+
+@hours_left = lambda do |order|
+	if order == :after
+		return 24
+	elsif order == :before
+		return 0
+	end
+end
+
+def query_by_hour(order, date)
+	hours_left = @hours_left.call(order)
+	unless after.hour == 0
+		# Loop through remaining hours in query
+		hour = after.hour
+	  while hour < hours_left
+			@queries << "#{path}#{date}-#{hour}#{ext}"
+			hour += 1
+		end
+	else
+		query_by_day(date)
+	end
+end
+
+def query_by_day(date)
+	@queries << "#{path}#{date}#{ext}"
+end
+
+(@a_date..@b_date).each_with_index do |date|
+	if date == @after
+		# check if date is first day, get by the hour
+		query_by_hour(:first, date)
+	elsif date == @before
+		# check if date is last day, get by the hour
+		query_by_hour(:last, date)
+	else
+		query_by_day
+	end
+end
+
+def make_calls
+	@queries.each do |uri|
+		gz = open(uri)
+		js = Zlib::GzipReader.new(gz)
+		@parsed = []
+		js.each do |j|
+			@parsed << JSON.parse(j)
+		end
+	end
+end
+
+# a_date = after.strftime("%F")
+
+# Take date range and loop through api calls until you reach end of date range
+# Check if hour is given, if so call through the end of the day
+# If until date is given  make calls to the last day, if last day is by the hour,
+# stop just short of that last day and make calls up to that last hour
+
+# minus day in hourly
+
+# count days, if no after argument given only make call on first day,
+# loop through days
+# first day, check if go by hour or day, otherwise make call by day
+# last day, check if go by hour or day, otherwise make call by day
+
+def get_by_hour
+	unless after.hour == 0
+		# Loop through remaining hours in the day
+		hour = after.hour
+	  while hour < 24
+			uri = "#{path}#{a_date}-#{hour}#{ext}"
+			hour += 1
+			make_call(uri)
+			puts hour
+		end
+	else
+		get_day
+	end
 end
 
 
+# Go through each and sort
+# Create new hash with repo name
+# If record matches event type add 1 to that repo name
 
+@parsed.each do |i|
+	# id = i["id"]
+	# name = i["repo"]["name"]
+	# type = i["type"]
+	# puts i
+end
 
-	private
+# Sort Hash by hits
+# Return first N results
+# Puts each
 
 # def build_query
 # 	options[:begin]
@@ -64,12 +144,7 @@ end
 # end
 
 # def make_call
-
 # end
 
 # def display
-
 # end
-
-
-
