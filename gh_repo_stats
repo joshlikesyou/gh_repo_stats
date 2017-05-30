@@ -89,11 +89,11 @@ class QueryBuilder
 	end
 
 	def process_date_range
-		(@a_date..@b_date).each do |date|
-			if date.to_s == @a_date.strftime('%F')
+		(@a_date..@b_date).each_with_index do |date,index|
+			if index == 0
 				# check if date is first day, get by the hour
 				query_by_hour_after(date)
-			elsif date.to_s == @b_date.strftime('%F')
+			elsif index == (@a_date..@b_date).count
 				# check if date is last day, get by the hour
 				query_by_hour_before(date)
 			else
@@ -156,14 +156,14 @@ class RepoProcessor
 
 end
 
-query_params = [a_time: @a_time,
+query_params = {a_time: @a_time,
 			 				  a_date: @a_date,
 							  b_time: @b_time,
 							  b_date: @b_date,
 							  path: @path,
-							  ext: @ext]
-query = QueryBuilder.new(*query_params)
+							  ext: @ext}
+query = QueryBuilder.new(query_params)
 queries = query.build
-repo_params = [queries: queries, count: @count, event: @event]
-process = RepoProcessor.new(*repo_params)
+repo_params = {queries: queries, count: @count, event: @event}
+process = RepoProcessor.new(repo_params)
 process.start
