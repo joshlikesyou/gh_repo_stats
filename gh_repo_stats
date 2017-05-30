@@ -18,9 +18,6 @@ opts = GetoptLong.new(
 @ext = '.json.gz'
 @event = "PushEvent"
 @count = 15
-@queries = []
-@parsed = []
-@repos = {}
 
 # options from command
 opts.each do |opt, arg|
@@ -38,89 +35,135 @@ opts.each do |opt, arg|
 	end
 end
 
-# Go through each hour and make api call
-def query_by_hour(mode, date)
-	mode == :after ? @p_time = @a_time : @p_time = @b_time
-	unless @p_time.hour == 0
-		# Loop through remaining hours in query
-		# only used on days that are partially selected
-		# check if this is from the after argument
-		if mode == :after
-			hour = @p_time.hour
-		  while hour < 24
-				@queries << "#{@path}#{date}-#{hour}#{@ext}"
-				hour += 1
-			end
-		elsif mode == :before
-		# check if this is from the before argument
-			hour = 0
-			while hour <= @p_time.hour
-				@queries << "#{@path}#{date}-#{hour}#{@ext}"
-				hour += 1
+class QueryBuilder
+	# Builds a list of queries to make on the githubarchive from a date range
+
+	def initialize(a_time:, a_date:, b_time:, b_date:, path:, ext:)
+		@b_time = b_time
+		@b_date = b_date
+		@a_time = a_time
+		@a_date = a_date
+		@path = path
+		@ext = ext
+		@queries = []
+	end
+
+	def build
+		process_date_range
+		@queries
+	end
+
+	private
+
+	def query_writer(date, hour)
+		@queries << "#{@path}#{date}-#{hour}#{@ext}"
+	end
+
+# Go through each hour on the first day starting on the first hour
+	def query_by_hour_after(date)
+		a_hour = @a_time.hour
+		unless a_hour == 0
+			(a_hour..23).each do |hour|
+				query_writer(date, hour)
 			end
 		end
-	else
-		# else go through hours of a whole day
 		query_by_day(date)
 	end
-end
 
-def query_by_day(date)
-	hour = 0
-	while hour < 24
-		@queries << "#{@path}#{date}-#{hour}#{@ext}"
-		hour += 1
+	# Go through each hour on the last day up to the last hour
+	def query_by_hour_before(date)
+		b_hour = @b_time.hour
+		unless b_hour == 0
+			(0..b_hour).each do |hour|
+				query_writer(date, hour)
+			end
+		end
+		query_by_day(date)
 	end
-end
 
-def process_date_range
-	(@a_date..@b_date).each_with_index do |date|
-		if date.to_s == @a_date.strftime('%F')
-			# check if date is first day, get by the hour
-			query_by_hour(:after, date)
-		elsif date.to_s == @b_date.strftime('%F')
-			# check if date is last day, get by the hour
-			query_by_hour(:before, date)
-		else
-			# runs all the inbetween days
-			query_by_day(date)
+	# Go through each whole day
+	def query_by_day(date)
+		(0..23).each do |hour|
+			query_writer(date, hour)
 		end
 	end
-end
 
-def make_calls
-	@queries.each do |uri|
-		gz = open(uri)
-		js = Zlib::GzipReader.new(gz)
-		@parsed = []
-		js.each do |j|
-			@parsed << JSON.parse(j)
-		end
-	end
-end
-
-def process_repos
-	# tally up the score from the repos
-	@parsed.each do |i|
-		if i["repository"] && i["type"] == @event
-			reponame = i["repository"]["owner"] + '/' + i["repository"]["name"]
-			if @repos[reponame].nil?
-				@repos[reponame] = 1
+	def process_date_range
+		(@a_date..@b_date).each do |date|
+			if date.to_s == @a_date.strftime('%F')
+				# check if date is first day, get by the hour
+				query_by_hour_after(date)
+			elsif date.to_s == @b_date.strftime('%F')
+				# check if date is last day, get by the hour
+				query_by_hour_before(date)
 			else
-				@repos[reponame] = @repos[reponame] + 1
+				# runs all the inbetween days
+				query_by_day(date)
 			end
 		end
 	end
-	@repos = @repos.sort_by { |k,v| [-v,k] }.to_h.first(@count)
-	@repos.each do |r|
-		puts "#{r[0]} - #{r[1]} events"
+
+end
+
+
+class RepoProcessor
+	# Responsible for taking the queries from the QueryBuilder
+	# Makes calls on those queries and sorts the repos by events
+
+	def initialize(queries:, count:, event:)
+		@queries = queries
+		@parsed = []
+		@repos = {}
+		@event = event
+		@count = count
 	end
+
+	def start
+		get_data
+		process_repos
+	end
+
+	private
+
+	def get_data
+		@queries.each do |uri|
+			gz = open(uri)
+			js = Zlib::GzipReader.new(gz)
+			@parsed = []
+			js.each do |j|
+				@parsed << JSON.parse(j)
+			end
+		end
+	end
+
+	def process_repos
+		# Tally up the score from the repos
+		@parsed.each do |i|
+			if i["repository"] && i["type"] == @event
+				reponame = i["repository"]["owner"] + '/' + i["repository"]["name"]
+				if @repos[reponame].nil?
+					@repos[reponame] = 1
+				else
+					@repos[reponame] = @repos[reponame] + 1
+				end
+			end
+		end
+		@repos = @repos.sort_by { |k,v| [-v,k] }.to_h.first(@count)
+		@repos.each do |r|
+			puts "#{r[0]} - #{r[1]} events"
+		end
+	end
+
 end
 
-def process
-	process_date_range
-	make_calls
-	process_repos
-end
-
-process
+query_params = [a_time: @a_time,
+			 				  a_date: @a_date,
+							  b_time: @b_time,
+							  b_date: @b_date,
+							  path: @path,
+							  ext: @ext]
+query = QueryBuilder.new(*query_params)
+queries = query.build
+repo_params = [queries: queries, count: @count, event: @event]
+process = RepoProcessor.new(*repo_params)
+process.start
