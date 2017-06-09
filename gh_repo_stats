@@ -7,59 +7,12 @@ require 'json'
 require 'time'
 require 'date'
 
-opts = GetoptLong.new(
-	[ '--after', GetoptLong::REQUIRED_ARGUMENT],
-	[ '--before', GetoptLong::REQUIRED_ARGUMENT],
-	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
-	[ '--count', GetoptLong::OPTIONAL_ARGUMENT]
-)
-
-@path = 'http://data.githubarchive.org/'
-@ext = '.json.gz'
-@event = "PushEvent"
-@count = 15
-
-# options from command
-opts.each do |opt, arg|
-	case opt
-	when '--after'
-		@a_time = Time.parse(arg)
-		@a_date = Date.parse(arg)
-	when '--before'
-		@b_time = Time.parse(arg)
-		@b_date = Date.parse(arg)
-	when '--event'
-		@event = arg
-	when '--count'
-		@count = arg.to_i
-	end
-end
-
-class QueryBuilder
-	# Builds a list of queries to make on the githubarchive from a date range
-
-	def initialize(a_time:, a_date:, b_time:, b_date:, path:, ext:)
-		@b_time = b_time
-		@b_date = b_date
-		@a_time = a_time
-		@a_date = a_date
-		@path = path
-		@ext = ext
-		@queries = []
+class Query
+	
+	def initialize(date:, hour:, mode:)
 	end
 
-	def build
-		process_date_range
-		@queries
-	end
-
-	private
-
-	def query_writer(date, hour)
-		@queries << "#{@path}#{date}-#{hour}#{@ext}"
-	end
-
-# Go through each hour on the first day starting on the first hour
+       # Go through each hour on the first day starting on the first hour
 	def query_by_hour_after(date)
 		a_hour = @a_time.hour
 		unless a_hour == 0
@@ -102,6 +55,40 @@ class QueryBuilder
 			end
 		end
 	end
+end
+
+class QueryBuilder
+	# Builds a list of queries to make on the githubarchive from a date range
+
+	def initialize(options)
+	  @event = options['--event']
+	  @count = options['--count']
+	  @query_opts = options.select { |o| ['--before', '--after'].include(o) } 
+	end
+	
+	PATH = 'http://data.githubarchive.org/'
+	EXT = '.json.gz'
+	
+	def build_query_list
+	  @query_opts.each do |opt, arg|
+	    @queries << Query.new(mode: opt, time: arg)
+	  end
+	end
+	
+	def build
+          process_date_range
+	  @queries
+	end
+	
+	def event
+	  @event ||= "PushEvent" 
+	end
+	
+	def count
+	  @count ||= 15
+	end
+	
+	private
 
 end
 
@@ -156,14 +143,27 @@ class RepoProcessor
 
 end
 
-query_params = {a_time: @a_time,
-			 				  a_date: @a_date,
-							  b_time: @b_time,
-							  b_date: @b_date,
-							  path: @path,
-							  ext: @ext}
-query = QueryBuilder.new(query_params)
-queries = query.build
-repo_params = {queries: queries, count: @count, event: @event}
-process = RepoProcessor.new(repo_params)
-process.start
+class Cli
+  def initialize(command_line_args)
+   # parse and validate args	
+  end
+  
+  def perform
+   #would break these up into different methods
+   query = QueryBuilder.new(opts)
+   queries = query.build
+   repo_params = {queries: queries, count: @count, event: @event}
+   process = RepoProcessor.new(repo_params)
+   process.start
+  end
+end
+
+
+opts = GetoptLong.new(
+	[ '--after', GetoptLong::REQUIRED_ARGUMENT],
+	[ '--before', GetoptLong::REQUIRED_ARGUMENT],
+	[ '--event', GetoptLong::OPTIONAL_ARGUMENT],
+	[ '--count', GetoptLong::OPTIONAL_ARGUMENT]
+)
+
+Cli.new(opts).perform
